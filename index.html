@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="th" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบบันทึกข้อมูลผู้รับบริการ (Standalone)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
+    * { font-family: 'Sarabun', sans-serif; box-sizing: border-box; }
+    body { background-color: #f1f5f9; }
+    .print-section { display: none; }
+    @media print {
+      .no-print { display: none !important; }
+      .print-section { display: block !important; background: white; }
+    }
+  </style>
+</head>
+<body class="h-full">
+  <div id="app" class="h-full w-full overflow-auto"></div>
+
+  <script>
+    // --- Config & State ---
+    const config = {
+      app_title: 'ระบบบันทึกข้อมูลผู้รับบริการ',
+      company_name: 'Fulfill (Standalone Version)',
+      primary_color: '#0f172a'
+    };
+
+    let allClients = [];
+    let currentView = 'list';
+    let editingClient = null;
+    let viewingClient = null;
+    let uploadedImageData = null;
+    let medicationList = [];
+
+    // --- Local Data Management (แทนที่ SDK) ---
+    const DB = {
+      load() {
+        const data = localStorage.getItem('local_client_db');
+        allClients = data ? JSON.parse(data) : [];
+        allClients.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      },
+      save() {
+        localStorage.setItem('local_client_db', JSON.stringify(allClients));
+        this.load();
+        renderApp();
+      }
+    };
+
+    function renderApp() {
+      const app = document.getElementById('app');
+      if (currentView === 'list') renderList(app);
+      else if (currentView === 'form') renderForm(app);
+      else if (currentView === 'detail') renderDetail(app);
+    }
+
+    // --- 1. หน้าตารางรายชื่อ ---
+    function renderList(container) {
+      container.innerHTML = `
+        <div class="max-w-7xl mx-auto p-6">
+          <div class="flex justify-between items-center mb-8 bg-white p-6 rounded-2xl shadow-sm border">
+            <div>
+              <h1 class="text-2xl font-bold" style="color: ${config.primary_color}">${config.app_title}</h1>
+              <p class="text-gray-500 text-sm">${config.company_name}</p>
+            </div>
+            <button id="addBtn" class="bg-blue-600 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-blue-700 transition">+ เพิ่มผู้รับบริการ</button>
+          </div>
+          <div class="bg-white rounded-2xl shadow-sm border overflow-hidden">
+            <table class="w-full text-left">
+              <thead class="bg-slate-50 border-b">
+                <tr class="text-slate-600 text-sm">
+                  <th class="p-4">รูปภาพ</th>
+                  <th class="p-4">ชื่อ-นามสกุล</th>
+                  <th class="p-4">วันทำสัญญา</th>
+                  <th class="p-4 text-center">จัดการ</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y">
+                ${allClients.length === 0 ? '<tr><td colspan="4" class="p-20 text-center text-slate-400">ยังไม่มีข้อมูลในระบบ</td></tr>' : ''}
+                ${allClients.map(c => `
+                  <tr class="hover:bg-slate-50 transition">
+                    <td class="p-4">
+                      ${c.client_image ? `<img src="${c.client_image}" class="w-12 h-12 rounded-full object-cover border">` : `<div class="w-12 h-12 rounded-full bg-slate-200 flex items-center justify-center text-slate-400 font-bold">${c.client_name.charAt(0)}</div>`}
+                    </td>
+                    <td class="p-4 font-semibold text-slate-800">${c.client_name}</td>
+                    <td class="p-4 text-slate-500">${new Date(c.contract_date).toLocaleDateString('th-TH')}</td>
+                    <td class="p-4 text-center space-x-2">
+                      <button onclick="viewClient('${c.id}')" 
+      class="inline-flex items-center justify-center bg-blue-50 text-blue-600 px-4 py-1.5 rounded-lg font-bold border border-blue-100 hover:bg-blue-600 hover:text-white hover:shadow-md transition-all duration-200">
+      ดู
+    </button>
+    
+    <button onclick="editClient('${c.id}')" 
+      class="inline-flex items-center justify-center bg-amber-50 text-amber-600 px-4 py-1.5 rounded-lg font-bold border border-amber-100 hover:bg-amber-500 hover:text-white hover:shadow-md transition-all duration-200">
+      แก้ไข
+    </button>
+    
+    <button onclick="deleteClient('${c.id}')" 
+      class="inline-flex items-center justify-center bg-red-50 text-red-600 px-4 py-1.5 rounded-lg font-bold border border-red-100 hover:bg-red-600 hover:text-white hover:shadow-md transition-all duration-200">
+      ลบ
+    </button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>`;
+      document.getElementById('addBtn').onclick = () => { currentView = 'form'; editingClient = null; medicationList = []; uploadedImageData = null; renderApp(); };
+    }
+
+    // --- 2. หน้าแบบฟอร์ม (ปรับปรุงฟิลด์ตามสั่ง) ---
+    function renderForm(container) {
+      const isEdit = !!editingClient;
+      if (isEdit && medicationList.length === 0) medicationList = JSON.parse(editingClient.medications || '[]');
+
+      container.innerHTML = `
+        <div class="max-w-4xl mx-auto p-6">
+          <button onclick="goBack()" class="mb-4 text-slate-500 hover:text-black font-medium">← กลับหน้าหลัก</button>
+          <div class="bg-white rounded-3xl shadow-xl p-8 border">
+            <h2 class="text-2xl font-bold mb-8 text-slate-800">${isEdit ? 'แก้ไขข้อมูล' : 'บันทึกข้อมูลใหม่'}</h2>
+            <form id="clientForm" class="space-y-6">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div><label class="block text-sm font-bold mb-2">วันทำสัญญา *</label><input type="date" id="contract_date" required class="w-full border rounded-xl p-3 focus:ring-2 ring-blue-100 outline-none"></div>
+                <div><label class="block text-sm font-bold mb-2">ชื่อ-นามสกุลผู้รับบริการ *</label><input type="text" id="client_name" required class="w-full border rounded-xl p-3 focus:ring-2 ring-blue-100 outline-none" placeholder="ชื่อ และ นามสกุล"></div>
+              </div>
+              
+              <div class="bg-slate-50 p-4 rounded-2xl border border-dashed">
+                <label class="block text-sm font-bold mb-2">รูปภาพผู้รับบริการ</label>
+                <input type="file" id="client_image" accept="image/*" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                <div id="imagePreview" class="mt-4 ${isEdit && editingClient.client_image ? '' : 'hidden'}">
+                  <img src="${isEdit ? editingClient.client_image : ''}" id="imgTag" class="w-32 h-32 object-cover rounded-2xl border-2 border-white shadow-md">
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div><label class="block text-sm font-bold mb-2">ราคาค่าบริการ (บาท)</label><input type="number" id="service_fee" class="w-full border rounded-xl p-3" placeholder="0.00"></div>
+                <div><label class="block text-sm font-bold mb-2">เงินประกัน (บาท)</label><input type="number" id="deposit" class="w-full border rounded-xl p-3" placeholder="0.00"></div>
+              </div>
+
+              <div><label class="block text-sm font-bold mb-2">โรคประจำตัว</label><input type="text" id="chronic_disease" class="w-full border rounded-xl p-3" placeholder="เช่น ความดันสูง, โรคไต"></div>
+              <div><label class="block text-sm font-bold mb-2">ประวัติผู้รับบริการ (อาการปัจจุบัน)</label><textarea id="client_history" rows="3" class="w-full border rounded-xl p-3"></textarea></div>
+              
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div><label class="block text-sm font-bold mb-2 text-amber-700">อาการเปลี่ยนแปลง</label><textarea id="symptom_changes" rows="3" class="w-full border-amber-200 bg-amber-50 rounded-xl p-3"></textarea></div>
+                <div><label class="block text-sm font-bold mb-2 text-red-700">อาการเฝ้าระวัง</label><textarea id="monitoring_symptoms" rows="3" class="w-full border-red-200 bg-red-50 rounded-xl p-3"></textarea></div>
+              </div>
+
+              <div class="border-t pt-8">
+                <div class="flex justify-between items-center mb-6">
+                  <h3 class="text-lg font-bold text-slate-800">รายการยา</h3>
+                  <button type="button" onclick="addMedicationRow()" class="bg-slate-800 text-white px-5 py-1.5 rounded-full text-sm font-bold hover:bg-slate-700 transition">+ เพิ่มแถวรายการยา</button>
+                </div>
+                <div id="medicationContainer" class="space-y-3"></div>
+              </div>
+
+              <div class="flex justify-end gap-4 pt-10 border-t">
+                <button type="button" onclick="goBack()" class="px-8 py-3 text-slate-500 font-bold">ยกเลิก</button>
+                <button type="submit" class="bg-blue-600 px-12 py-3 text-white font-bold rounded-2xl shadow-lg shadow-blue-200 hover:bg-blue-700 transition">บันทึกข้อมูล</button>
+              </div>
+            </form>
+          </div>
+        </div>`;
+
+      // Handling Image
+      const fileInput = document.getElementById('client_image');
+      fileInput.onchange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            uploadedImageData = ev.target.result;
+            document.getElementById('imgTag').src = uploadedImageData;
+            document.getElementById('imagePreview').classList.remove('hidden');
+          };
+          reader.readAsDataURL(file);
+        }
+      };
+
+      if (isEdit) {
+        document.getElementById('contract_date').value = editingClient.contract_date;
+        document.getElementById('client_name').value = editingClient.client_name;
+        document.getElementById('service_fee').value = editingClient.service_fee;
+        document.getElementById('deposit').value = editingClient.deposit;
+        document.getElementById('chronic_disease').value = editingClient.chronic_disease;
+        document.getElementById('client_history').value = editingClient.client_history;
+        document.getElementById('symptom_changes').value = editingClient.symptom_changes;
+        document.getElementById('monitoring_symptoms').value = editingClient.monitoring_symptoms;
+        uploadedImageData = editingClient.client_image;
+      }
+
+      renderMedicationRows();
+
+      document.getElementById('clientForm').onsubmit = (e) => {
+        e.preventDefault();
+        const data = {
+          id: isEdit ? editingClient.id : Date.now().toString(),
+          contract_date: document.getElementById('contract_date').value,
+          client_name: document.getElementById('client_name').value,
+          client_image: uploadedImageData,
+          service_fee: parseFloat(document.getElementById('service_fee').value) || 0,
+          deposit: parseFloat(document.getElementById('deposit').value) || 0,
+          chronic_disease: document.getElementById('chronic_disease').value,
+          client_history: document.getElementById('client_history').value,
+          symptom_changes: document.getElementById('symptom_changes').value,
+          monitoring_symptoms: document.getElementById('monitoring_symptoms').value,
+          medications: JSON.stringify(medicationList),
+          created_at: isEdit ? editingClient.created_at : new Date().toISOString()
+        };
+
+        if (isEdit) {
+          const idx = allClients.findIndex(c => c.id === editingClient.id);
+          allClients[idx] = data;
+        } else {
+          allClients.unshift(data);
+        }
+        DB.save();
+        currentView = 'list';
+      };
+    }
+
+    // --- 3. หน้าแสดงรายละเอียด ---
+    function renderDetail(container) {
+      const c = viewingClient;
+      const meds = JSON.parse(c.medications || '[]');
+      container.innerHTML = `
+        <div class="max-w-4xl mx-auto p-6 no-print">
+          <div class="flex justify-between mb-6">
+            <button onclick="goBack()" class="text-slate-500 font-bold">← กลับหน้าหลัก</button>
+            <button onclick="window.print()" class="bg-slate-800 text-white px-8 py-2 rounded-xl font-bold shadow-md">พิมพ์เอกสาร</button>
+          </div>
+          <div class="bg-white rounded-3xl shadow-xl overflow-hidden p-10 border">
+            <div class="flex flex-col md:flex-row gap-10 mb-10 border-b pb-10">
+              <div class="w-48 h-48 bg-slate-50 rounded-3xl overflow-hidden border shadow-inner">
+                ${c.client_image ? `<img src="${c.client_image}" class="w-full h-full object-cover">` : ''}
+              </div>
+              <div class="flex-grow">
+                <span class="text-blue-600 font-bold text-sm tracking-widest uppercase">ข้อมูลผู้รับบริการ</span>
+                <h2 class="text-4xl font-black text-slate-800 mt-1">${c.client_name}</h2>
+                <p class="text-slate-400 mt-2 font-medium">วันเริ่มสัญญา: ${new Date(c.contract_date).toLocaleDateString('th-TH', {dateStyle:'long'})}</p>
+                <div class="mt-6 flex gap-3">
+                  <div class="bg-blue-50 px-4 py-2 rounded-xl border border-blue-100"><p class="text-xs text-blue-500 font-bold uppercase">ค่าบริการ</p><p class="text-lg font-black text-blue-700">${c.service_fee.toLocaleString()} ฿</p></div>
+                  <div class="bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-100"><p class="text-xs text-emerald-500 font-bold uppercase">เงินประกัน</p><p class="text-lg font-black text-emerald-700">${c.deposit.toLocaleString()} ฿</p></div>
+                </div>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-10">
+              <div class="space-y-8">
+                <div><h4 class="font-bold text-slate-800 mb-2 underline decoration-blue-500 decoration-4 underline-offset-4">โรคประจำตัว</h4><p class="text-slate-600">${c.chronic_disease || '-'}</p></div>
+                <div><h4 class="font-bold text-slate-800 mb-2">อาการปัจจุบัน</h4><p class="text-slate-600 bg-slate-50 p-4 rounded-xl border italic">${c.client_history || '-'}</p></div>
+              </div>
+              <div class="space-y-8">
+                <div class="bg-amber-50 p-6 rounded-2xl border border-amber-100"><h4 class="font-bold text-amber-800 mb-2 flex items-center">⚠️ อาการเปลี่ยนแปลง</h4><p class="text-amber-700">${c.symptom_changes || '-'}</p></div>
+                <div class="bg-red-50 p-6 rounded-2xl border border-red-100"><h4 class="font-bold text-red-800 mb-2 flex items-center">🚨 อาการเฝ้าระวัง</h4><p class="text-red-700">${c.monitoring_symptoms || '-'}</p></div>
+              </div>
+            </div>
+            <div class="mt-12">
+              <h4 class="font-bold text-slate-800 mb-4 text-xl border-b pb-2">รายการยาประจำตัว</h4>
+              <table class="w-full text-left rounded-xl overflow-hidden">
+                <thead class="bg-slate-800 text-white text-sm">
+                  <tr><th class="p-3">ลำดับ</th><th class="p-3">ชื่อยา</th><th class="p-3">ขนาด</th><th class="p-3 text-center">จำนวน</th><th class="p-3">วิธีรับประทาน</th></tr>
+                </thead>
+                <tbody class="divide-y border">
+                  ${meds.length === 0 ? '<tr><td colspan="5" class="p-4 text-center text-slate-400">ไม่มีรายการยา</td></tr>' : meds.map((m, i) => `<tr><td class="p-3 font-bold text-slate-400">${i+1}</td><td class="p-3 font-semibold text-slate-700">${m.name}</td><td class="p-3 text-slate-600">${m.size}</td><td class="p-3 text-center font-bold text-blue-600">${m.amount}</td><td class="p-3 text-slate-600">${m.usage}</td></tr>`).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="print-section p-10">
+          <div class="text-center border-b-4 border-double pb-6 mb-10">
+            <h1 class="text-3xl font-bold underline">ใบบันทึกข้อมูลและประวัติผู้รับบริการ</h1>
+            <p class="text-lg mt-2 font-bold">${config.company_name}</p>
+          </div>
+          <div class="flex justify-between items-start mb-8 border p-6 rounded-lg">
+            <div class="space-y-4">
+              <p class="text-xl"><strong>ชื่อ-นามสกุล:</strong> <span class="text-2xl font-bold">${c.client_name}</span></p>
+              <p><strong>วันทำสัญญา:</strong> ${new Date(c.contract_date).toLocaleDateString('th-TH')}</p>
+              <p><strong>โรคประจำตัว:</strong> ${c.chronic_disease || '-'}</p>
+              <p><strong>ค่าบริการ:</strong> ${c.service_fee.toLocaleString()} บาท | <strong>เงินประกัน:</strong> ${c.deposit.toLocaleString()} บาท</p>
+            </div>
+            ${c.client_image ? `<img src="${c.client_image}" class="w-32 h-32 border-2 border-black">` : ''}
+          </div>
+          <div class="grid grid-cols-2 gap-4 mb-8">
+            <div class="border p-4 h-32"><strong>ประวัติอาการปัจจุบัน:</strong><br>${c.client_history || '-'}</div>
+            <div class="border p-4 h-32"><strong>อาการเฝ้าระวัง:</strong><br>${c.monitoring_symptoms || '-'}</div>
+          </div>
+          <p class="font-bold mb-2">รายการยา:</p>
+          <table class="w-full border-collapse border border-black">
+            <tr class="bg-gray-100 text-sm font-bold"><td class="border border-black p-2 text-center w-12">ที่</td><td class="border border-black p-2">ชื่อยา</td><td class="border border-black p-2">ขนาด</td><td class="border border-black p-2 text-center">จำนวน</td><td class="border border-black p-2">วิธีรับประทาน</td></tr>
+            ${meds.map((m, i) => `<tr class="text-sm"><td class="border border-black p-2 text-center">${i+1}</td><td class="border border-black p-2">${m.name}</td><td class="border border-black p-2">${m.size}</td><td class="border border-black p-2 text-center">${m.amount}</td><td class="border border-black p-2">${m.usage}</td></tr>`).join('')}
+          </table>
+          <div class="mt-20 flex justify-between px-10">
+             <div class="text-center w-64 border-t border-black pt-2">ลงชื่อผู้รับบริการ / ญาติ</div>
+             <div class="text-center w-64 border-t border-black pt-2">ลงชื่อเจ้าหน้าที่ / ผู้บันทึก</div>
+          </div>
+        </div>`;
+    }
+
+    // --- Medication Row Logic ---
+    window.addMedicationRow = () => {
+      medicationList.push({ name: '', size: '', amount: '', usage: '' });
+      renderMedicationRows();
+    };
+    function renderMedicationRows() {
+      const container = document.getElementById('medicationContainer');
+      if (!container) return;
+      container.innerHTML = medicationList.map((m, i) => `
+        <div class="grid grid-cols-12 gap-2 bg-slate-50 p-4 rounded-xl items-center border border-slate-200">
+          <div class="col-span-1 text-center font-bold text-slate-300">${i+1}</div>
+          <div class="col-span-11 md:col-span-3"><input type="text" placeholder="ชื่อยา" value="${m.name}" onchange="updateMed(${i}, 'name', this.value)" class="w-full p-2 border rounded-lg text-sm"></div>
+          <div class="col-span-4 md:col-span-2"><input type="text" placeholder="ขนาด" value="${m.size}" onchange="updateMed(${i}, 'size', this.value)" class="w-full p-2 border rounded-lg text-sm"></div>
+          <div class="col-span-4 md:col-span-2"><input type="text" placeholder="จำนวน" value="${m.amount}" onchange="updateMed(${i}, 'amount', this.value)" class="w-full p-2 border rounded-lg text-sm"></div>
+          <div class="col-span-4 md:col-span-3"><input type="text" placeholder="วิธีรับประทาน" value="${m.usage}" onchange="updateMed(${i}, 'usage', this.value)" class="w-full p-2 border rounded-lg text-sm"></div>
+          <div class="col-span-12 md:col-span-1 text-right"><button type="button" onclick="removeMed(${i})" class="text-red-400 hover:text-red-600 font-bold px-2">ลบ</button></div>
+        </div>`).join('');
+    }
+    window.updateMed = (i, field, val) => { medicationList[i][field] = val; };
+    window.removeMed = (i) => { medicationList.splice(i, 1); renderMedicationRows(); };
+
+    // --- Helpers ---
+    window.viewClient = (id) => { viewingClient = allClients.find(c => c.id === id); currentView = 'detail'; renderApp(); };
+    window.editClient = (id) => { editingClient = allClients.find(c => c.id === id); currentView = 'form'; renderApp(); };
+    window.deleteClient = (id) => { if(confirm('ยืนยันการลบข้อมูลนี้หรือไม่?')) { allClients = allClients.filter(c => c.id !== id); DB.save(); } };
+    window.goBack = () => { currentView = 'list'; editingClient = null; renderApp(); };
+
+    DB.load();
+    renderApp();
+  </script>
+</body>
+</html>
