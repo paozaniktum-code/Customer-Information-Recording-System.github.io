@@ -1,0 +1,95 @@
+/* ==================================================
+   Fulfill Care Record - Global Styles
+   ================================================== */
+
+/* Font */
+@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
+
+* {
+  font-family: 'Sarabun', sans-serif;
+  box-sizing: border-box;
+}
+
+/* Base */
+body {
+  background-color: #f1f5f9;
+  margin: 0;
+}
+
+/* ---------------------------------
+   Print / PDF Section
+   --------------------------------- */
+
+/* ซ่อนในหน้าจอปกติ */
+.print-section {
+  display: none;
+}
+
+/* แสดงเฉพาะตอนสั่ง print */
+@media print {
+  body {
+    background: white;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-section {
+    display: block !important;
+  }
+
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
+}
+
+/* ---------------------------------
+   PDF helper (html2pdf)
+   --------------------------------- */
+
+/* class เสริม ถ้าต้องบังคับแสดง */
+.pdf-visible {
+  display: block !important;
+  background: white;
+}
+
+/* ---------------------------------
+   Table (เอกสาร)
+   --------------------------------- */
+.print-section table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.print-section th,
+.print-section td {
+  border: 1px solid #000;
+  padding: 6px;
+}
+
+/* ---------------------------------
+   Signature line
+   --------------------------------- */
+.signature-line {
+  border-top: 1px solid #000;
+  width: 250px;
+  text-align: center;
+  padding-top: 6px;
+}
+@keyframes deleteIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.9) translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-delete-in {
+  animation: deleteIn 0.25s ease-out forwards;
+}
