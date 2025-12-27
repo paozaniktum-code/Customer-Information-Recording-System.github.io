@@ -1,6 +1,6 @@
 // config.js
 window.APP_CONFIG = {
-  name: 'Fulfill Care Record',
+  name: 'Fulfill Elderly',
   tagline: 'ระบบบันทึกข้อมูลผู้รับบริการ สำหรับศูนย์ดูแลผู้สูงอายุ',
   company: 'Fulfill Living',
   version: '1.0.0',
@@ -10,3 +10,4 @@ window.APP_CONFIG = {
   website: 'https://fulfill-living.com',
   support: 'support@fulfill-living.com'
 };
+
